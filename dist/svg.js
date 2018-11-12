@@ -6,7 +6,7 @@
 * @copyright Wout Fierens <wout@mick-wout.com>
 * @license MIT
 *
-* BUILT: Mon Nov 12 2018 14:48:34 GMT+0100 (GMT+01:00)
+* BUILT: Mon Nov 12 2018 23:06:57 GMT+0100 (GMT+01:00)
 */;
 var SVG = (function () {
   'use strict';
@@ -1267,7 +1267,7 @@ var SVG = (function () {
     return Box;
   }();
 
-  function getBox(cb) {
+  function getBox(cb, retry) {
     var box;
 
     try {
@@ -1277,13 +1277,7 @@ var SVG = (function () {
         throw new Error('Element not in the dom');
       }
     } catch (e) {
-      try {
-        var clone = this.clone().addTo(parser().svg).show();
-        box = cb(clone.node);
-        clone.remove();
-      } catch (e) {
-        throw new Error('Getting a bounding box of element "' + this.node.nodeName + '" is not possible');
-      }
+      box = retry(this);
     }
 
     return box;
@@ -1292,11 +1286,22 @@ var SVG = (function () {
   function bbox() {
     return new Box(getBox.call(this, function (node) {
       return node.getBBox();
+    }, function (el) {
+      try {
+        var clone = el.clone().addTo(parser().svg).show();
+        var box = clone.node.getBBox();
+        clone.remove();
+        return box;
+      } catch (e) {
+        throw new Error('Getting bbox of element "' + el.node.nodeName + '" is not possible');
+      }
     }));
   }
   function rbox(el) {
     var box = new Box(getBox.call(this, function (node) {
       return node.getBoundingClientRect();
+    }, function (el) {
+      throw new Error('Getting rbox of element "' + el.node.nodeName + '" is not possible');
     }));
     if (el) return box.transform(el.screenCTM().inverse());
     return box.addOffset();
@@ -5002,7 +5007,9 @@ var SVG = (function () {
     nextDraw: null,
     frames: new Queue(),
     timeouts: new Queue(),
-    timer: globals.window.performance || globals.window.Date,
+    timer: function timer() {
+      return globals.window.performance || globals.window.Date;
+    },
     transforms: [],
     frame: function frame(fn) {
       // Store the node
@@ -5023,7 +5030,7 @@ var SVG = (function () {
     timeout: function timeout(fn, delay) {
       delay = delay || 0; // Work out when the event should fire
 
-      var time = Animator.timer.now() + delay; // Add the timeout to the end of the queue
+      var time = Animator.timer().now() + delay; // Add the timeout to the end of the queue
 
       var node = Animator.timeouts.push({
         run: fn,
@@ -5076,8 +5083,6 @@ var SVG = (function () {
     }
   };
 
-  var time = globals.window.performance || Date;
-
   var makeSchedule = function makeSchedule(runnerInfo) {
     var start = runnerInfo.start;
     var duration = runnerInfo.runner.duration();
@@ -5098,7 +5103,7 @@ var SVG = (function () {
       _classCallCheck(this, Timeline);
 
       this._timeSource = function () {
-        return time.now();
+        return (globals.window.performance || globals.window.Date).now();
       };
 
       this._dispatcher = globals.document.createElement('div'); // Store the timing variables
